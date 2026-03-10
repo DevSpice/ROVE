@@ -1,5 +1,11 @@
 from GameEngine import game
 import random
+import numpy as np
+
+SUIT_MAP = {s: i for i, s in enumerate(game.suits)}   # s=0, h=1, c=2, d=3
+VALUE_MAP_NORM = {v: i/12.0 for i, v in enumerate(game.values)}  # 2→0.0, A→1.0
+STARTING_STACK = 200  # normalize chip counts against this
+
 
 
 class Agent:
@@ -354,8 +360,8 @@ class SAgent(Agent):
        BET_FRACTION    – fraction of chips to bet when value-betting
     """
 
-    BET_THRESHOLD   = 0.55   # Must be > 55% strong to open-bet
-    CALL_MARGIN     = 0.15   # Strength must beat pot_odds by 15 pp to call
+    BET_THRESHOLD   = 0.25   # Must be > 55% strong to open-bet
+    CALL_MARGIN     = 0.05   # Strength must beat pot_odds by 15 pp to call
     RAISE_THRESHOLD = 0.50   # Must be > 70% strong to raise
     BET_FRACTION    = 0.20   # Open-bet sizing: 20% of current stack
 
@@ -419,3 +425,77 @@ class SAgent(Agent):
 
         # Strength didn't justify continuing — fold
         return game.Action(check=0, fold=1, call=0, bet=0)
+    
+def EncodeCard(card):
+    """
+    Encodes a single card as a 6-element list:
+    [normalized_rank, is_spade, is_heart, is_club, is_diamond]
+    """
+    rank = VALUE_MAP_NORM[card.value]
+    suit_onehot = [0.0, 0.0, 0.0, 0.0]
+    suit_onehot[SUIT_MAP[card.suit]] = 1.0
+    return [rank] + suit_onehot
+
+def EncodeCards(cards, max_cards):
+    """
+    Encodes a list of cards into a fixed-length flat list.
+    Zero-pads if fewer than max_cards are present.
+    """
+    encoded = []
+    for card in cards[:max_cards]:
+        encoded += EncodeCard(card)
+    
+    card_size = len(EncodeCard(cards[0])) if cards else 5  # don't hardcode 6
+    missing = max_cards - min(len(cards), max_cards)
+    encoded += [0.0] * (missing * card_size)
+    return encoded
+
+
+def RoundOneHot(num_community_cards):
+    """
+    Returns a 4-element one-hot vector for the current street.
+    [preflop, flop, turn, river]
+    """
+    if num_community_cards == 0:
+        return [1, 0, 0, 0]
+    elif num_community_cards == 3:
+        return [0, 1, 0, 0]
+    elif num_community_cards == 4:
+        return [0, 0, 1, 0]
+    else:
+        return [0, 0, 0, 1]
+    
+
+def BuildStateVector(agent, table, agents, currBet):
+    
+    # Dynamically calculate total chips in play for normalization
+    total_chips = sum(a.chips for a in agents) + table.chips
+    norm = total_chips if total_chips > 0 else 1  # avoid divide-by-zero
+
+    # Cards (54 numbers)
+    hole_encoded      = EncodeCards(agent.hand.cards, 4)
+    community_encoded = EncodeCards(table.hand.cards, 5)
+
+    # Chip counts — normalized against total chips in play
+    pot           = table.chips / norm
+    bet           = currBet / norm
+    my_stack      = agent.chips / norm
+    opponents     = [a for a in agents if a is not agent]
+    avg_opp_stack = (sum(a.chips for a in opponents) / len(opponents)) / norm
+
+    # Street and position
+    street   = RoundOneHot(len(table.hand.cards))
+    position = agents.index(agent) / max(len(agents) - 1, 1)
+
+    state = (hole_encoded + community_encoded +
+             [pot, bet, my_stack, avg_opp_stack] +
+             street + [position])
+    
+    arr = np.array(state, dtype=np.float32)
+    if arr.shape[0] != 54:
+        print(f"BAD STATE SHAPE: {arr.shape[0]}")
+        print(f"  hole: {len(hole_encoded)}, community: {len(community_encoded)}")
+        print(f"  street: {street}, position: {position}")
+
+    return np.array(state, dtype=np.float32)
+
