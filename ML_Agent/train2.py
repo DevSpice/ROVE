@@ -300,7 +300,7 @@ def Train():
             else:              stats.LogAction(3)
 
             next_state = agents.BuildStateVector(
-                dqn_agent, step['table'], step['agentLst'], step['currBet']
+                dqn_agent, step['table'], step['agentLst'], step['currBet'], step['history']
             )
 
             done = step['done']

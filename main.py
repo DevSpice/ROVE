@@ -42,11 +42,10 @@ def RecordAction(history, agent, street, action, pot_size):
         if pot_size > 0:
             entry[3] = min(action.bet / pot_size, 2.0) / 2.0
 
-def CheckWinner(isIn):
-    if isIn["numIn"] == 1:
-        for agent, value in isIn.items():
-            if value == True:
-                return agent
+def CheckWinner(isIn, agentLst):
+    for agent in agentLst:
+        if isIn.get(agent) is True:
+            return agent
 
 def PostBlind(agent, amount, table):
     """Forces an agent to post a blind bet"""
@@ -90,7 +89,7 @@ def BettingRound(table, agentLst, roundNum, isIn, currBet=0, dealer=None, histor
             isIn[currAgent] = False
             isIn["numIn"] -= 1
             if isIn["numIn"] == 1:
-                winner = CheckWinner(isIn)
+                winner = CheckWinner(isIn, agentLst)
                 yield {
                     'actor': currAgent, 'action': action,
                     'table': table, 'agentLst': agentLst,
