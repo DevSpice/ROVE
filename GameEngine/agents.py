@@ -10,7 +10,7 @@ STARTING_STACK = 200  # normalize chip counts against this
 
 class Agent:
 
-    def Action(self, table=None, agents=None, currBet=0):
+    def Action(self, isIn=None, table=None, agents=None, currBet=0, history=None):
         return game.Action(check=0, fold=1, call=0, bet=0)
 
     def __init__(self, chips, name):
@@ -43,7 +43,7 @@ class RAgent(Agent):
     def __init__(self, chips, name):
         super().__init__(chips, name)
 
-    def Action(self, table=None, agents=None, currBet=0):
+    def Action(self, isIn=None, table=None, agents=None, currBet=0, history=None):
         if currBet == 0:
             # No bet to face — choose randomly between checking and betting
             if random.random() < 0.5 or self.chips == 0:
@@ -81,7 +81,7 @@ class UserAgent(Agent):
     def __init__(self, chips, name):
         super().__init__(chips, name)
 
-    def Action(self, table=None, agents=None, currBet=0):
+    def Action(self, isIn=None, table=None, agents=None, currBet=0, history=None):
         """
         Prompts the user via the command line to make a betting decision.
         Displays the current game state before asking for input.
@@ -103,13 +103,25 @@ class UserAgent(Agent):
             if table.hand.cards:
                 table.hand.ShowHand()
             else:
-                print("  No community cards yet.")
+                print("  No community cards yet.\n")
+
+        print(f"Dealer: {isIn['D']}")
+        print(f"Big blind: {isIn['Big']}")
+        print(f"Small Blind: {isIn['Small']}")
+
+        if isIn['lastBet']:
+            print(f"Last bet: {isIn['lastBet'].name}, ${currBet}")
 
         # Show all players and their chip counts
         if agents is not None:
             print("\n  [Players]")
             for agent in agents:
-                tag = " <- YOU" if agent is self else ""
+                if agent is self:
+                    tag = " <- YOU"
+                elif isIn[agent] == True:
+                    tag = " <- In"
+                else:
+                    tag = " <- Out"
                 print(f"    {getattr(agent, 'name', 'Agent')}: {agent.chips} chips{tag}")
 
         # Show the user their own hand
@@ -138,22 +150,22 @@ class UserAgent(Agent):
                     # Can't check if there's an outstanding bet — must call or fold
                     print(f"  You can't check — there's a bet of {currBet}. Call or fold instead.")
                     continue
-                print("  You check.")
+                print("  You check.\n")
                 return game.Action(check=1, fold=0, call=0, bet=0)
 
             elif command == "f" or command == "fold":
-                print("  You fold.")
+                print("  You fold.\n")
                 return game.Action(check=0, fold=1, call=0, bet=0)
 
             elif command == "call":
                 if currBet == 0:
                     print("  Nothing to call — use 'check' instead.")
                     continue
-                if self.chips < currBet:
-                    print(f"  Not enough chips to call! You have {self.chips}, need {currBet}.")
-                    print("  You can fold instead.")
-                    continue
-                print(f"  You call {currBet}.")
+                # if self.chips < currBet:
+                #     print(f"  Not enough chips to call! You have {self.chips}, need {currBet}.")
+                #     print("  You can fold instead.")
+                #     continue
+                print(f"  You call {currBet}.\n")
                 return game.Action(check=0, fold=0, call=1, bet=currBet)
 
             elif command == "b" or command == "bet":
@@ -171,7 +183,7 @@ class UserAgent(Agent):
                 if amount > self.chips:
                     print(f"  You only have {self.chips} chips!")
                     continue
-                print(f"  You bet {amount}.")
+                print(f"  You bet {amount}.\n")
                 return game.Action(check=0, fold=0, call=0, bet=amount)
 
             else:
@@ -400,7 +412,7 @@ class SAgent(Agent):
     # Core decision logic
     # ------------------------------------------------------------------
 
-    def Action(self, table=None, agents=None, currBet=0):
+    def Action(self, isIn=None, table=None, agents=None, currBet=0, history=None):
         strength  = self._HandStrength(table)
         pot_odds  = self._PotOdds(table, currBet)
 
@@ -465,8 +477,39 @@ def RoundOneHot(num_community_cards):
     else:
         return [0, 0, 0, 1]
     
+STREET_ORDER = ["Preflop", "Flop", "Turn", "River"]
 
-def BuildStateVector(agent, table, agents, currBet):
+def EncodeHistory(agent, agentLst, history):
+    """
+    Encodes opponent action history as a flat vector.
+    
+    For each opponent × each street: [folded, passive, aggressive, amount]
+    = 4 opponents × 4 streets × 4 features = 64 numbers
+    
+    We skip the agent itself — its own history is implicit
+    in its chip count and current bet.
+    
+    Zero-padding for streets not yet played is automatic
+    since EmptyHistory initializes everything to 0.
+    """
+    opponents = [a for a in agentLst if a is not agent]
+    encoded = []
+
+    for opp in opponents[:4]:  # cap at 4 opponents
+        for street in STREET_ORDER:
+            if opp.name in history:
+                encoded += history[opp.name][street]
+            else:
+                encoded += [0.0, 0.0, 0.0, 0.0]
+
+    # Pad if fewer than 4 opponents
+    missing_opps = 4 - min(len(opponents), 4)
+    encoded += [0.0] * (missing_opps * 4 * 4)
+
+    return encoded  # always 64 numbers
+    
+
+def BuildStateVector(agent, table, agents, currBet, history=None):
     
     # Dynamically calculate total chips in play for normalization
     total_chips = sum(a.chips for a in agents) + table.chips
@@ -483,16 +526,24 @@ def BuildStateVector(agent, table, agents, currBet):
     opponents     = [a for a in agents if a is not agent]
     avg_opp_stack = (sum(a.chips for a in opponents) / len(opponents)) / norm
 
+    if len(table.hand.cards) >= 3:
+        hand_strength = BestFiveOmaha(agent.hand, table.hand)[0] / 8.0
+    else:
+        hand_strength = 0.0
+
     # Street and position
     street   = RoundOneHot(len(table.hand.cards))
     position = agents.index(agent) / max(len(agents) - 1, 1)
 
+    history_encoded = EncodeHistory(agent, agents, history) if history is not None else [0.0] * 64
+
     state = (hole_encoded + community_encoded +
              [pot, bet, my_stack, avg_opp_stack] +
-             street + [position])
+             street + [position, hand_strength] +
+             history_encoded)
     
     arr = np.array(state, dtype=np.float32)
-    if arr.shape[0] != 54:
+    if arr.shape[0] != 119:
         print(f"BAD STATE SHAPE: {arr.shape[0]}")
         print(f"  hole: {len(hole_encoded)}, community: {len(community_encoded)}")
         print(f"  street: {street}, position: {position}")

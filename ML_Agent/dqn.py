@@ -13,12 +13,12 @@ import main
 GAMMA           = 0.99    # Discount factor
 LR              = 1e-3    # Learning rate
 BATCH_SIZE      = 64      # How many experiences to sample per training step
-BUFFER_SIZE     = 10_000  # Max experiences stored in replay buffer
+BUFFER_SIZE     = 50_000  # Max experiences stored in replay buffer
 EPSILON_START   = 1.0     # Start fully random
 EPSILON_END     = 0.05    # Never go below 5% random
-EPSILON_DECAY   = 0.995   # Multiply epsilon by this each episode
+EPSILON_DECAY   = 0.999995   # Multiply epsilon by this each episode
 TARGET_UPDATE   = 50      # Copy online → target network every N episodes
-STATE_DIM       = 54      # Must match your BuildStateVector output
+STATE_DIM       = 119      # Must match your BuildStateVector output
 ACTION_DIM      = 4       # fold, check, call, bet
 
 
@@ -34,11 +34,13 @@ class PokerNet(nn.Module):
     def __init__(self, state_dim, action_dim):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(state_dim, 128),
+            nn.Linear(state_dim, 256),
             nn.ReLU(),
-            nn.Linear(128, 128),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(128, action_dim)
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, action_dim)
         )
 
     def forward(self, x):
@@ -109,7 +111,10 @@ def CalculateReward(agent, action, chips_before, chips_after, won_hand, pot_size
     if action.fold == 1:
         # Folding loses whatever you put in — penalize proportionally
         # but lightly (the terminal reward will handle the rest)
-        reward -= (agent.In / main.BIG_BLIND) * 0.1
+        reward -= (agent.In / main.BIG_BLIND) * 0.05
+
+    if action.bet > 0:
+        reward += 0.1
 
     return reward
 
@@ -146,8 +151,9 @@ class DQNAgent(agents.Agent):
     # ------------------------------------------------------------------
     # Action selection
     # ------------------------------------------------------------------
-    def Action(self, table=None, agentLst=None, currBet=0):
-        state = agents.BuildStateVector(self, table, agentLst, currBet)
+    def Action(self, isIn=None, table=None, agentLst=None, currBet=0, history=None):
+
+        state = agents.BuildStateVector(self, table, agentLst, currBet, history)
 
         # Epsilon-greedy: explore randomly or exploit the network
         if self.training and random.random() < self.epsilon:
@@ -219,27 +225,28 @@ class DQNAgent(agents.Agent):
     # ------------------------------------------------------------------
     # Save / Load
     # ------------------------------------------------------------------
-    def Save(self, path="dqn_poker.pth"):
-        torch.save(self.online_net.state_dict(), path)
-        print(f"Model saved to {path}")
-
-    def Load(self, path="dqn_poker.pth"):
-        self.online_net.load_state_dict(torch.load(path))
-        self.target_net.load_state_dict(self.online_net.state_dict())
-        print(f"Model loaded from {path}")
     # def Save(self, path="dqn_poker.pth"):
-    #     torch.save({
-    #         'model_state': self.online_net.state_dict(),
-    #         'epsilon':     self.epsilon
-    #     }, path)
-    #     print(f"Model saved to {path} (epsilon: {self.epsilon:.3f})")
+    #     torch.save(self.online_net.state_dict(), path)
+    #     print(f"Model saved to {path}")
 
     # def Load(self, path="dqn_poker.pth"):
-    #     checkpoint = torch.load(path, weights_only=True)
-    #     self.online_net.load_state_dict(checkpoint['model_state'])
+    #     self.online_net.load_state_dict(torch.load(path))
     #     self.target_net.load_state_dict(self.online_net.state_dict())
-    #     self.epsilon = checkpoint.get('epsilon', EPSILON_END)
-    #     print(f"Model loaded from {path} (epsilon: {self.epsilon:.3f})")
+    #     print(f"Model loaded from {path}")
+
+    def Save(self, path="dqn_poker.pth"):
+        torch.save({
+            'model_state': self.online_net.state_dict(),
+            'epsilon':     self.epsilon
+        }, path)
+        print(f"Model saved to {path} (epsilon: {self.epsilon:.3f})")
+
+    def Load(self, path="dqn_poker.pth"):
+        checkpoint = torch.load(path, weights_only=True)
+        self.online_net.load_state_dict(checkpoint['model_state'])
+        self.target_net.load_state_dict(self.online_net.state_dict())
+        self.epsilon = checkpoint.get('epsilon', EPSILON_END)
+        print(f"Model loaded from {path} (epsilon: {self.epsilon:.3f})")
 
     # ------------------------------------------------------------------
     # Internal helpers

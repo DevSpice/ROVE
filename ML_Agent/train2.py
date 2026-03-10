@@ -8,7 +8,7 @@ from ML_Agent import dqn
 import main
 
 # ── Config ────────────────────────────────────────────────────
-STARTING_CHIPS  = 500
+STARTING_CHIPS  = 200
 CARDS_PER_PLAYER = 4
 NUM_EPISODES    = 50000
 LOG_INTERVAL    = 100   # print to console every N hands
@@ -195,9 +195,33 @@ class SnapshotPool:
 
 # How often to snapshot and what the table looks like
 SNAPSHOT_INTERVAL  = 200   # add self to pool every N episodes
-SELF_PLAY_FRACTION = 0.5   # fraction of opponents that are self-play snapshots
+SELF_PLAY_FRACTION = 0.75   # fraction of opponents that are self-play snapshots
                            # the rest will be SAgent/RAgent
 
+
+def SavePool(pool, path="snapshot_pool/"):
+    os.makedirs(path, exist_ok=True)
+    for i, snap in enumerate(pool.snapshots):
+        torch.save(snap.online_net.state_dict(), f"{path}snap_{i}.pth")
+    # Save count so we know how many to reload
+    with open(f"{path}count.json", "w") as f:
+        json.dump({"count": len(pool.snapshots)}, f)
+
+def LoadPool(path="snapshot_pool/"):
+    pool = SnapshotPool(max_size=10)
+    if not os.path.exists(f"{path}count.json"):
+        return pool
+    with open(f"{path}count.json") as f:
+        count = json.load(f)["count"]
+    for i in range(count):
+        snap = dqn.DQNAgent(STARTING_CHIPS, f"Snap_{i}", training=False)
+        snap.online_net.load_state_dict(
+            torch.load(f"{path}snap_{i}.pth", weights_only=True)
+        )
+        snap.epsilon = 0.0
+        pool.snapshots.append(snap)
+    print(f"Loaded snapshot pool with {len(pool.snapshots)} snapshots")
+    return pool
 
 def BuildOpponentList(dqn_agent, pool, num_opponents=4):
     """
@@ -231,13 +255,14 @@ def BuildOpponentList(dqn_agent, pool, num_opponents=4):
 
 def Train():
     dqn_agent = dqn.DQNAgent(STARTING_CHIPS, "DQN", training=True)
-    pool      = SnapshotPool(max_size=10)
+    pool = LoadPool()
     stats     = TrainingStats(window=100)
 
     # Resume if a saved model exists
     if os.path.exists("dqn_final.pth"):
         dqn_agent.Load("dqn_final.pth")
         print("Resuming from saved model...")
+        print(f"Resuming — epsilon: {dqn_agent.epsilon:.3f}")
     else:
         print("Starting fresh training run...")
 
@@ -329,10 +354,12 @@ def Train():
             os.makedirs("checkpoints", exist_ok=True)
             dqn_agent.Save(f"checkpoints/dqn_ep{episode}.pth")
             stats.Save()
+            SavePool(pool)
 
     dqn_agent.Save("dqn_final.pth")
     stats.Save()
-    PlotResults(stats)
+    SavePool(pool)
+    # PlotResults(stats)
 
 
 if __name__ == "__main__":

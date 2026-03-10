@@ -9,9 +9,38 @@ This is where you can change the type of agent playing.
 
 '''
 rounds = 1000
-startingChips = 500
-SMALL_BLIND = startingChips // 10
-BIG_BLIND = startingChips // 20
+startingChips = 200
+SMALL_BLIND = startingChips // 20
+BIG_BLIND = startingChips // 10
+
+def EmptyHistory(agentLst):
+    """Creates a blank history dict for all agents across all streets."""
+    return {
+        agent.name: {
+            street: [0.0, 0.0, 0.0, 0.0]
+            for street in ["Preflop", "Flop", "Turn", "River"]
+        }
+        for agent in agentLst
+    }
+
+def RecordAction(history, agent, street, action, pot_size):
+    """
+    Updates history for an agent on a given street.
+    Features: [folded, passive, aggressive, amount_fraction]
+    
+    amount_fraction = how much they put in relative to pot size.
+    This captures bet sizing which is a key poker tell.
+    """
+    entry = history[agent.name][street]
+
+    if action.fold:
+        entry[0] = 1.0
+    elif action.check or action.call:
+        entry[1] = 1.0
+    else:
+        entry[2] = 1.0
+        if pot_size > 0:
+            entry[3] = min(action.bet / pot_size, 2.0) / 2.0
 
 def CheckWinner(isIn):
     if isIn["numIn"] == 1:
@@ -26,15 +55,19 @@ def PostBlind(agent, amount, table):
     agent.In += actual
     table.AddChips(actual)
 
-def BettingRound(table, agentLst, roundNum, isIn, currBet=0, dealer=None):
+def BettingRound(table, agentLst, roundNum, isIn, currBet=0, dealer=None, history=None, street="Preflop"):
     numAgents = len(agentLst)
     if dealer is None:
         dealer = roundNum % numAgents
+    isIn['D'] = agentLst[dealer].name
 
     # Everyone active needs to act at least once
     to_act = [agentLst[(dealer + j) % numAgents] 
               for j in range(numAgents) 
               if isIn[agentLst[(dealer + j) % numAgents]]]
+    
+    lastBet = None
+    min_raise = BIG_BLIND 
     
     while to_act:
         currAgent = to_act.pop(0)
@@ -43,7 +76,12 @@ def BettingRound(table, agentLst, roundNum, isIn, currBet=0, dealer=None):
         if not isIn[currAgent]:
             continue
 
-        action = currAgent.Action(table, agentLst, currBet)
+        isIn['lastBet'] = lastBet 
+
+        action = currAgent.Action(isIn, table, agentLst, currBet, history)
+
+        if history is not None:
+            RecordAction(history, currAgent, street, action, table.chips)
 
         if action.check == 1:
             pass
@@ -56,7 +94,8 @@ def BettingRound(table, agentLst, roundNum, isIn, currBet=0, dealer=None):
                 yield {
                     'actor': currAgent, 'action': action,
                     'table': table, 'agentLst': agentLst,
-                    'currBet': currBet, 'done': True, 'winner': winner
+                    'currBet': currBet, 'done': True, 
+                    'winner': winner, 'history': history
                 }
                 return
 
@@ -67,11 +106,20 @@ def BettingRound(table, agentLst, roundNum, isIn, currBet=0, dealer=None):
             table.AddChips(diff)
 
         else:  # bet/raise
-            diff = action.bet - currAgent.In
-            currAgent.In = action.bet
+            lastBet = currAgent
+            max_bet = currAgent.chips + currAgent.In  # total they can commit
+
+            min_legal_bet = currBet + min_raise
+            actual_bet = max(min(action.bet, max_bet), min_legal_bet)
+
+            new_raise_size = actual_bet - currBet
+            min_raise = new_raise_size
+
+            diff = actual_bet - currAgent.In
+            currAgent.In = actual_bet
             table.AddChips(diff)
             currAgent.RemoveChips(diff)
-            currBet = action.bet
+            currBet = actual_bet
             curr_idx = agentLst.index(currAgent)
             to_act = [
                 agentLst[(curr_idx + j) % numAgents]
@@ -79,10 +127,12 @@ def BettingRound(table, agentLst, roundNum, isIn, currBet=0, dealer=None):
                 if isIn[agentLst[(curr_idx + j) % numAgents]]
             ]
 
+
         yield {
             'actor': currAgent, 'action': action,
             'table': table, 'agentLst': agentLst,
-            'currBet': currBet, 'done': False, 'winner': None
+            'currBet': currBet, 'done': False, 
+            'winner': None, 'history': history
         }
 
 
@@ -110,6 +160,10 @@ def Round(agentLst, CPP, roundNum):
     isIn = {agent: True for agent in agentLst}
     numAgents = len(agentLst)
     isIn["numIn"] = numAgents
+    isIn['Big'] = BIG_BLIND
+    isIn['Small'] = SMALL_BLIND
+
+    history = EmptyHistory(agentLst) 
 
     sb_idx = (roundNum + 1) % numAgents
     bb_idx = (roundNum + 2) % numAgents
@@ -125,7 +179,7 @@ def Round(agentLst, CPP, roundNum):
 
     # Pre-flop
     for step in BettingRound(table, agentLst, roundNum, isIn,
-                              currBet=BIG_BLIND, dealer=first_preflop):
+                              currBet=BIG_BLIND, dealer=first_preflop, history=history, street="Preflop"):
         yield step
         if step['done']:
             Winner(step['winner'], table)
@@ -134,12 +188,13 @@ def Round(agentLst, CPP, roundNum):
 
     # Flop, Turn, River
     first_postflop = (roundNum + 1) % numAgents
-    for street, num_cards in [("Flop", 3), ("Turn", 1), ("River", 1)]:
+    for street_name, num_cards in [("Flop", 3), ("Turn", 1), ("River", 1)]:
         for _ in range(num_cards):
             table.hand.AddCard(deck.GetCard())
 
         for step in BettingRound(table, agentLst, roundNum, isIn,
-                                  currBet=0, dealer=first_postflop):
+                                  currBet=0, dealer=first_postflop,
+                                  history=history, street=street_name):
             yield step
             if step['done']:
                 Winner(step['winner'], table)
@@ -157,95 +212,96 @@ def Round(agentLst, CPP, roundNum):
     yield {
         'actor': None, 'action': None,
         'table': table, 'agentLst': agentLst,
-        'currBet': 0, 'done': True, 'winner': winners
+        'currBet': 0, 'done': True, 
+        'winner': winners, 'history' : history
     }
 
 
-if __name__ == "__main__": 
+# if __name__ == "__main__": 
 
-    # We are playing omaha, so each player gets 4 cards
-    cardsPerPlayer = 4
+#     # We are playing omaha, so each player gets 4 cards
+#     cardsPerPlayer = 4
 
-    agentLst = []
+#     agentLst = []
 
-    # agent1 = agents.UserAgent(200, "Trent")
-    # agentLst.append(agent1)
+#     # agent1 = agents.UserAgent(200, "Trent")
+#     # agentLst.append(agent1)
 
-    agent2 = agents.SAgent(startingChips, "Tyler")
-    agentLst.append(agent2)
+#     agent2 = agents.SAgent(startingChips, "Tyler")
+#     agentLst.append(agent2)
 
-    agent3 = agents.SAgent(startingChips, "Cheo")
-    agentLst.append(agent3)
+#     agent3 = agents.SAgent(startingChips, "Cheo")
+#     agentLst.append(agent3)
 
-    agent4 = agents.RAgent(startingChips, "Jed")
-    agentLst.append(agent4)
+#     agent4 = agents.RAgent(startingChips, "Jed")
+#     agentLst.append(agent4)
 
-    agent6 = dqn.DQNAgent(startingChips, "MLBot")
-    agentLst.append(agent6)
+#     agent6 = dqn.DQNAgent(startingChips, "MLBot")
+#     agentLst.append(agent6)
 
-    roundNum = 0
+#     roundNum = 0
 
-    # while rounds > 0:
+#     # while rounds > 0:
 
-    #     print("round number = " + str(roundNum))
+#     #     print("round number = " + str(roundNum))
 
-    #     Round(agentLst, cardsPerPlayer, roundNum)
+#     #     Round(agentLst, cardsPerPlayer, roundNum)
 
-    #     Cleanup(agentLst)
+#     #     Cleanup(agentLst)
 
-    #     roundNum += 1
+#     #     roundNum += 1
 
-    #     rounds -= 1
-    # else:
-    #     print("\nRound limit reached!")
+#     #     rounds -= 1
+#     # else:
+#     #     print("\nRound limit reached!")
 
-    # Standing(agentLst)
+#     # Standing(agentLst)
 
-    while rounds > 0:
-        print("round number = " + str(roundNum))
+#     while rounds > 0:
+#         print("round number = " + str(roundNum))
 
-        chips_before = agent6.chips  # track DQN chips before hand
+#         chips_before = agent6.chips  # track DQN chips before hand
 
-        for step in Round(agentLst, cardsPerPlayer, roundNum):
-            # Only do ML bookkeeping when the DQN acted
-            if step['actor'] is not agent6 or step['action'] is None:
-                continue
+#         for step in Round(agentLst, cardsPerPlayer, roundNum):
+#             # Only do ML bookkeeping when the DQN acted
+#             if step['actor'] is not agent6 or step['action'] is None:
+#                 continue
 
-            next_state = agents.BuildStateVector(
-                agent6, step['table'], step['agentLst'], step['currBet']
-            )
+#             next_state = agents.BuildStateVector(
+#                 agent6, step['table'], step['agentLst'], step['currBet']
+#             )
 
-            done = step['done']
-            won_hand = None
-            if done:
-                w = step['winner']
-                won_hand = (agent6 in w) if isinstance(w, list) else (w is agent6)
+#             done = step['done']
+#             won_hand = None
+#             if done:
+#                 w = step['winner']
+#                 won_hand = (agent6 in w) if isinstance(w, list) else (w is agent6)
 
-            reward = dqn.CalculateReward(
-                agent=agent6,
-                action=step['action'],
-                chips_before=chips_before,
-                chips_after=agent6.chips,
-                won_hand=won_hand,
-                pot_size=step['table'].chips
-            )
+#             reward = dqn.CalculateReward(
+#                 agent=agent6,
+#                 action=step['action'],
+#                 chips_before=chips_before,
+#                 chips_after=agent6.chips,
+#                 won_hand=won_hand,
+#                 pot_size=step['table'].chips
+#             )
 
-            agent6.StoreExperience(next_state, reward, done)
-            agent6.Train()
+#             agent6.StoreExperience(next_state, reward, done)
+#             agent6.Train()
 
-        Cleanup(agentLst)
-        agent6.DecayEpsilon()
+#         Cleanup(agentLst)
+#         agent6.DecayEpsilon()
 
-        if roundNum % dqn.TARGET_UPDATE == 0:
-            agent6.UpdateTargetNetwork()
+#         if roundNum % dqn.TARGET_UPDATE == 0:
+#             agent6.UpdateTargetNetwork()
 
-        # Rebuy anyone who busted
-        for agent in agentLst:
-            if agent.chips == 0:
-                agent.AddChips(startingChips)
-                agent.BuyIns += 1
+#         # Rebuy anyone who busted
+#         for agent in agentLst:
+#             if agent.chips == 0:
+#                 agent.AddChips(startingChips)
+#                 agent.BuyIns += 1
 
-        roundNum += 1
-        rounds -= 1
+#         roundNum += 1
+#         rounds -= 1
 
-    Standing(agentLst)
+#     Standing(agentLst)
