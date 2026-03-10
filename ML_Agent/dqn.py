@@ -16,7 +16,7 @@ BATCH_SIZE      = 64      # How many experiences to sample per training step
 BUFFER_SIZE     = 50_000  # Max experiences stored in replay buffer
 EPSILON_START   = 1.0     # Start fully random
 EPSILON_END     = 0.05    # Never go below 5% random
-EPSILON_DECAY   = 0.999995   # Multiply epsilon by this each episode
+EPSILON_DECAY   = 0.9995   # Multiply epsilon by this each episode
 TARGET_UPDATE   = 50      # Copy online → target network every N episodes
 STATE_DIM       = 119      # Must match your BuildStateVector output
 ACTION_DIM      = 4       # fold, check, call, bet
@@ -101,20 +101,29 @@ def CalculateReward(agent, action, chips_before, chips_after, won_hand, pot_size
     # of stack sizes.
     if won_hand is not None:
         chip_delta = chips_after - chips_before
-        reward += chip_delta / main.BIG_BLIND   # normalize by big blind
+        change = chip_delta / main.BIG_BLIND
+        # print(f"Change from winning: {change}")
+        reward += change  # normalize by big blind
 
     # ── Intermediate shaping ───────────────────────────────────────
     # Small signal to help with credit assignment mid-hand.
     # These are intentionally small so they don't override the
     # terminal signal.
+    if action is not None: 
+        if action.fold == 1:
+            # Folding loses whatever you put in — penalize proportionally
+            # but lightly (the terminal reward will handle the rest)
+            sub = (agent.In / main.BIG_BLIND)
+            # print(f"Change in reward from folding: -{sub}")
+            reward -= sub
 
-    if action.fold == 1:
-        # Folding loses whatever you put in — penalize proportionally
-        # but lightly (the terminal reward will handle the rest)
-        reward -= (agent.In / main.BIG_BLIND) * 0.05
+        # if action.bet > 0:
+            # change = (agent.In) /  pot_size
+            # print(f"Change in reward from betting: {0}")
+        #     reward += (agent.In) /  pot_size
 
-    if action.bet > 0:
-        reward += 0.1
+    # if chips_after == 0:
+    #     reward -= 10
 
     return reward
 
@@ -129,8 +138,9 @@ class DQNAgent(agents.Agent):
     During training:  uses epsilon-greedy (sometimes random, sometimes network)
     During inference: always uses the network (epsilon=0)
     """
-    def __init__(self, chips, name, training=True):
+    def __init__(self, chips, name, training=True, file="dqn_final.pth"):
         super().__init__(chips, name)
+        self.file       = file
         self.training   = training
         self.epsilon    = EPSILON_START if training else 0.0
 
@@ -234,14 +244,17 @@ class DQNAgent(agents.Agent):
     #     self.target_net.load_state_dict(self.online_net.state_dict())
     #     print(f"Model loaded from {path}")
 
-    def Save(self, path="dqn_poker.pth"):
+    def Save(self, path=None):
+        if path is None:
+            path = self.file
         torch.save({
             'model_state': self.online_net.state_dict(),
             'epsilon':     self.epsilon
         }, path)
         print(f"Model saved to {path} (epsilon: {self.epsilon:.3f})")
 
-    def Load(self, path="dqn_poker.pth"):
+    def Load(self):
+        path = self.file
         checkpoint = torch.load(path, weights_only=True)
         self.online_net.load_state_dict(checkpoint['model_state'])
         self.target_net.load_state_dict(self.online_net.state_dict())

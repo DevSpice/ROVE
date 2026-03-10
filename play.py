@@ -19,8 +19,8 @@ def PrintAction(agent, action):
 
 if __name__ == "__main__":
     # Load trained bot
-    dqn_agent = dqn.DQNAgent(STARTING_CHIPS, "Cheo", training=False)
-    dqn_agent.Load(MODEL_PATH)
+    dqn_agent = dqn.DQNAgent(STARTING_CHIPS, "Cheo", training=False, file=MODEL_PATH)
+    dqn_agent.Load()
     dqn_agent.epsilon = 0.0  # always greedy, no random actions
 
     # Build your table
