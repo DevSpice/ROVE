@@ -15,12 +15,6 @@ GENERATIONS       = 50
 
 
 def RunMatchup(agent_a, agent_b, num_hands=TOURNAMENT_HANDS):
-    """
-    Runs num_hands of heads-up between two agents.
-    Returns (chips_won_by_a, chips_won_by_b) relative to starting chips.
-    Both agents play greedily (no training, epsilon=0).
-    """
-    # Clone so we don't mess up their chip counts
     a = copy.deepcopy(agent_a)
     b = copy.deepcopy(agent_b)
     a.chips   = STARTING_CHIPS
@@ -29,20 +23,30 @@ def RunMatchup(agent_a, agent_b, num_hands=TOURNAMENT_HANDS):
     b.epsilon = 0.0
 
     agentLst = [a, b]
+    a_rebuys = 0
+    b_rebuys = 0
 
     for hand in range(num_hands):
         for step in main.Round(agentLst, CARDS_PER_PLAYER, hand):
-            pass  # no training, just play
+            pass
         main.Cleanup(agentLst)
 
-        # Rebuy if busted so the game keeps going
         for agent in agentLst:
             if agent.chips == 0:
                 agent.AddChips(STARTING_CHIPS)
+                if agent is a:
+                    a_rebuys += 1
+                else:
+                    b_rebuys += 1
 
-    return a.chips - STARTING_CHIPS, b.chips - STARTING_CHIPS
+    # Each rebuy = a full stack lost, subtract it from the final delta
+    score_a = (a.chips - STARTING_CHIPS) - (a_rebuys * STARTING_CHIPS)
+    score_b = (b.chips - STARTING_CHIPS) - (b_rebuys * STARTING_CHIPS)
 
+    # Sanity check — in a zero-sum game these must cancel
+    assert score_a + score_b == 0, f"Zero-sum violated: {score_a} + {score_b} != 0"
 
+    return score_a, score_b
 def RunTournament(population):
     """
     Round-robin tournament — every agent plays every other agent.

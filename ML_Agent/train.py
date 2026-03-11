@@ -10,7 +10,7 @@ import main
 # ── Config ────────────────────────────────────────────────────
 STARTING_CHIPS  = 200
 CARDS_PER_PLAYER = 4
-NUM_EPISODES    = 1000000
+NUM_EPISODES    = 100000
 LOG_INTERVAL    = 100   # print to console every N hands
 SAVE_INTERVAL   = 500   # save model checkpoint every N hands
 TARGET_UPDATE   = 50    # sync target network every N hands
@@ -223,7 +223,7 @@ def LoadPool(path="snapshot_pool/"):
     print(f"Loaded snapshot pool with {len(pool.snapshots)} snapshots")
     return pool
 
-def BuildOpponentList(dqn_agent, pool, num_opponents=4):
+def BuildOpponentList(dqnAgent, pool, num_opponents=4):
     """
     Builds a mixed opponent list:
     - Some fraction are snapshots from the pool (self-play)
@@ -241,12 +241,15 @@ def BuildOpponentList(dqn_agent, pool, num_opponents=4):
         # Pool empty early in training — use rule-based as fallback
         num_rule_based = num_opponents
 
+    path = "/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/BestModels/best_gen4.pth"
+
     # Rule-based opponents (keeps agent honest against basic strategies)
     rule_based = [
         agents.SAgent(STARTING_CHIPS, "Tyler"),
         agents.SAgent(STARTING_CHIPS, "Cheo"),
         agents.SAgent(STARTING_CHIPS, "Jed"),
         agents.SAgent(STARTING_CHIPS, "Jiya"),
+        dqn.DQNAgent(STARTING_CHIPS, "DQN", training=False, file=path)
     ]
     opponents += rule_based[:num_rule_based]
 
@@ -256,11 +259,11 @@ def BuildOpponentList(dqn_agent, pool, num_opponents=4):
 def Train():
     pool = LoadPool()
     stats     = TrainingStats(window=100)
-    path = "dqn_final.pth"
+    path = "noFreeFolding.pth"
     dqn_agent = dqn.DQNAgent(STARTING_CHIPS, "DQN", training=True, file=path)
 
     # Resume if a saved model exists
-    if os.path.exists("dqn_final.pth"):
+    if os.path.exists("noFreeFolding.pth"):
         dqn_agent.Load()
         print("Resuming from saved model...")
         print(f"Resuming — epsilon: {dqn_agent.epsilon:.3f}")
@@ -284,51 +287,8 @@ def Train():
         # ── Build fresh opponent list each hand ───────────────
         # This is key — opponents change every hand, so the agent
         # can't memorize specific opponent patterns
-        opponents = BuildOpponentList(dqn_agent, pool)
+        opponents = BuildOpponentList(path, pool)
         agentLst  = opponents + [dqn_agent]
-
-        # chips_before = dqn_agent.chips
-        # episode_loss = []
-
-        # for step in main.Round(agentLst, CARDS_PER_PLAYER, roundNum):
-        #     if step['actor'] is not dqn_agent or step['action'] is None:
-        #         continue
-
-        #     # Track action distribution
-        #     action = step['action']
-        #     if action.fold:    stats.LogAction(0)
-        #     elif action.check: stats.LogAction(1)
-        #     elif action.call:  stats.LogAction(2)
-        #     else:              stats.LogAction(3)
-
-        #     next_state = agents.BuildStateVector(
-        #         dqn_agent, step['table'], step['agentLst'], step['currBet'], step['history']
-        #     )
-
-        #     done = step['done']
-        #     won_hand = None
-        #     # if done:
-        #     #     w = step['winner']
-        #     #     won_hand = (dqn_agent in w) if isinstance(w, list) else (w is dqn_agent)
-        #     #     won_hand = True
-            
-        #     if step["winner"] is not None:
-        #         w = step["winner"]
-        #         won_hand = (dqn_agent in w) if isinstance(w, list) else (w is dqn_agent)
-
-        #     reward = dqn.CalculateReward(
-        #         agent=dqn_agent,
-        #         action=step['action'],
-        #         chips_before=chips_before,
-        #         chips_after=dqn_agent.chips,
-        #         won_hand=won_hand,
-        #         pot_size=step['table'].chips
-        #     )
-
-        #     dqn_agent.StoreExperience(next_state, reward, done)
-        #     loss = dqn_agent.Train()
-        #     if loss is not None:
-        #         episode_loss.append(loss)
 
         chips_before = dqn_agent.chips
         episode_loss = []

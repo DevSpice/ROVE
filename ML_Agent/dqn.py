@@ -16,7 +16,7 @@ BATCH_SIZE      = 64      # How many experiences to sample per training step
 BUFFER_SIZE     = 50_000  # Max experiences stored in replay buffer
 EPSILON_START   = 1.0     # Start fully random
 EPSILON_END     = 0.05    # Never go below 5% random
-EPSILON_DECAY   = 0.9995   # Multiply epsilon by this each episode
+EPSILON_DECAY   = 0.99995   # Multiply epsilon by this each episode
 TARGET_UPDATE   = 50      # Copy online → target network every N episodes
 STATE_DIM       = 119      # Must match your BuildStateVector output
 ACTION_DIM      = 4       # fold, check, call, bet
@@ -266,17 +266,40 @@ class DQNAgent(agents.Agent):
     # ------------------------------------------------------------------
     def _IndexToAction(self, idx, currBet):
         """Converts a network output index to a game Action."""
+        # if idx == 0:  # fold
+        #     return game.Action(check=0, fold=1, call=0, bet=0)
+        # elif idx == 1:  # check
+        #     if currBet > 0:
+        #         # Can't check when there's a bet — fall back to call
+        #         return game.Action(check=0, fold=0, call=1, bet=currBet)
+        #     return game.Action(check=1, fold=0, call=0, bet=0)
+        # elif idx == 2:  # call
+        #     if currBet == 0:
+        #         return game.Action(check=1, fold=0, call=0, bet=0)
+        #     return game.Action(check=0, fold=0, call=1, bet=currBet)
+        # else:  # bet
+        #     amount = max(currBet + 1, int(self.chips * 0.2))
+        #     amount = min(amount, self.chips)
+        #     if amount <= currBet:
+        #         return game.Action(check=0, fold=0, call=1, bet=currBet)
+        #     return game.Action(check=0, fold=0, call=0, bet=amount)
+        
         if idx == 0:  # fold
+            # Folding when you could check for free is strictly dominated
+            if currBet == 0:
+                return game.Action(check=1, fold=0, call=0, bet=0)
             return game.Action(check=0, fold=1, call=0, bet=0)
+
         elif idx == 1:  # check
             if currBet > 0:
-                # Can't check when there's a bet — fall back to call
                 return game.Action(check=0, fold=0, call=1, bet=currBet)
             return game.Action(check=1, fold=0, call=0, bet=0)
+
         elif idx == 2:  # call
             if currBet == 0:
                 return game.Action(check=1, fold=0, call=0, bet=0)
             return game.Action(check=0, fold=0, call=1, bet=currBet)
+
         else:  # bet
             amount = max(currBet + 1, int(self.chips * 0.2))
             amount = min(amount, self.chips)

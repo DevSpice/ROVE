@@ -69,6 +69,6 @@ if __name__ == "__main__":
             break
 
         # Rebuy anyone who busted
-        # for agent in agentLst:
-        #     if agent.chips == 0:
-        #         agent.AddChips(STARTING_CHIPS)
+        for agent in agentLst:
+            if agent.chips == 0:
+                agent.AddChips(STARTING_CHIPS)
