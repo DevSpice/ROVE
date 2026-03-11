@@ -4,7 +4,7 @@ import main
 
 STARTING_CHIPS   = 200
 CARDS_PER_PLAYER = 4
-MODEL_PATH       = "dqn_final.pth"
+MODEL_PATH       = input("File path to model: \n")
 
 def PrintAction(agent, action):
 

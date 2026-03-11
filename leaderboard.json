@@ -1,0 +1,32 @@
+[
+  {
+    "path": "checkpoints/dqn_ep957000.pth",
+    "score": 18.98,
+    "epsilon": 0.05,
+    "episode": "ep957000"
+  },
+  {
+    "path": "checkpoints/dqn_ep960500.pth",
+    "score": 13.04,
+    "epsilon": 0.05,
+    "episode": "ep960500"
+  },
+  {
+    "path": "checkpoints/dqn_ep906500.pth",
+    "score": -4.8,
+    "epsilon": 0.05,
+    "episode": "ep906500"
+  },
+  {
+    "path": "checkpoints/dqn_ep961000.pth",
+    "score": -4.8,
+    "epsilon": 0.05,
+    "episode": "ep961000"
+  },
+  {
+    "path": "checkpoints/dqn_ep964500.pth",
+    "score": -4.8,
+    "epsilon": 0.05,
+    "episode": "ep964500"
+  }
+]

@@ -10,7 +10,7 @@ import main
 # ── Config ────────────────────────────────────────────────────
 STARTING_CHIPS  = 200
 CARDS_PER_PLAYER = 4
-NUM_EPISODES    = 10000
+NUM_EPISODES    = 1000000
 LOG_INTERVAL    = 100   # print to console every N hands
 SAVE_INTERVAL   = 500   # save model checkpoint every N hands
 TARGET_UPDATE   = 50    # sync target network every N hands

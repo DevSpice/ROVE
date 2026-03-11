@@ -25,12 +25,14 @@ TOURNAMENT_HANDS  = 200    # hands per head-to-head matchup in the tournament
 #
 
 MODELS = [
-    ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/BestModels/best_gen4.pth", "Evo1"),
-    ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/dqn_final.pth", "Main Model"),
-    ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/evolution/best_gen8.pth", "Evo8"),
-    ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/evolution/best_gen9.pth", "Evo9"),
+    ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/BestModels/best_gen4.pth", "gen1"),
+    ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/evolution/best_gen9.pth", "gen9"),
+    ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/evolution/best_gen38.pth", "gen38"),
+    ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/evolution/best_gen49.pth", "LatestGen")
+    ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/BestModels/6amIteration.pth", "Early Model"),
+    ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/checkpoints/dqn_ep957000.pth", "Best_In_Tournament"),
     ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/BestModels/betCheck.pth", "Bet+Check"),
-    ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/BestModels/6amIteration.pth", "Early Model")
+    ("/Users/trenthoule/Desktop/School/GenAI/Final Project/ROVE/dqn_final.pth", "Main Model"),
 ]
 
 # If MODELS is empty above, fall back to the interactive prompt
